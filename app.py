@@ -4,7 +4,7 @@ import streamlit as st
 # =============================
 # CONFIG
 # =============================
-API_BASE = "https://movie-recommendation-system-t86z.onrender.com/" or "http://127.0.0.1:8000"
+API_BASE = "https://movie-recommendation-system-t86z.onrender.com" or "http://127.0.0.1:8000"
 TMDB_IMG = "https://image.tmdb.org/t/p/w500"
 
 st.set_page_config(page_title="Movie Recommender", page_icon="🎬", layout="wide")
@@ -67,6 +67,7 @@ def goto_details(tmdb_id: int):
 def api_get_json(path: str, params: dict | None = None):
     try:
         r = requests.get(f"{API_BASE}{path}", params=params, timeout=25)
+        print(f"API GET {r.url}")
         if r.status_code >= 400:
             return None, f"HTTP {r.status_code}: {r.text[:300]}"
         return r.json(), None
