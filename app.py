@@ -7,11 +7,16 @@ Views: home feed / keyword search → movie details → TF-IDF + genre recommend
 
 from __future__ import annotations
 
+import html
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 import streamlit as st
+from dotenv import load_dotenv
+
+# Load .env so local MOVIE_API_BASE / secrets work the same as the API process.
+load_dotenv()
 
 # =============================
 # CONFIG
@@ -158,6 +163,18 @@ def goto_details(tmdb_id: int) -> None:
 # API HELPERS
 # =============================
 @st.cache_data(ttl=60)
+def _cached_api_get(path: str, params_key: Tuple[Tuple[str, Any], ...]) -> Any:
+    """
+    Cached happy-path GET. Raises on HTTP/network errors so failures are NOT cached
+    (Render cold-start 502s must not stick for the full TTL).
+    """
+    params = dict(params_key) if params_key else None
+    r = requests.get(f"{API_BASE}{path}", params=params, timeout=45)
+    if r.status_code >= 400:
+        raise RuntimeError(f"HTTP {r.status_code}: {r.text[:300]}")
+    return r.json()
+
+
 def api_get_json(
     path: str, params: Optional[Dict[str, Any]] = None
 ) -> Tuple[Any, Optional[str]]:
@@ -165,13 +182,11 @@ def api_get_json(
     GET JSON from the FastAPI backend.
 
     Returns (data, None) on success, or (None, error_message) on failure.
-    Short TTL cache avoids hammering Render on Streamlit reruns.
+    Successful bodies are cached briefly; errors always retry on the next call.
     """
     try:
-        r = requests.get(f"{API_BASE}{path}", params=params, timeout=45)
-        if r.status_code >= 400:
-            return None, f"HTTP {r.status_code}: {r.text[:300]}"
-        return r.json(), None
+        params_key = tuple(sorted((params or {}).items()))
+        return _cached_api_get(path, params_key), None
     except Exception as e:
         return None, f"Request failed: {e}"
 
@@ -208,7 +223,7 @@ def poster_grid(
                     if tmdb_id:
                         goto_details(int(tmdb_id))
                 st.markdown(
-                    f"<div class='movie-title'>{title}</div>",
+                    f"<div class='movie-title'>{html.escape(str(title))}</div>",
                     unsafe_allow_html=True,
                 )
                 st.markdown("</div>", unsafe_allow_html=True)
@@ -278,10 +293,14 @@ def parse_tmdb_search_to_cards(
     matched = [x for x in raw_items if keyword_l in x["title"].lower()]
     final_list = matched if matched else raw_items
 
+    # Labels must be unique — duplicate "Title (year)" entries would collapse in a dict.
     suggestions: List[Tuple[str, int]] = []
+    used_labels: set[str] = set()
     for x in final_list[:10]:
         year = (x.get("release_date") or "")[:4]
-        label = f"{x['title']} ({year})" if year else x["title"]
+        base = f"{x['title']} ({year})" if year else x["title"]
+        label = base if base not in used_labels else f"{base} · id {x['tmdb_id']}"
+        used_labels.add(label)
         suggestions.append((label, x["tmdb_id"]))
 
     cards = [
@@ -377,10 +396,10 @@ if st.session_state.view == "home":
                         index=0,
                         key="search_suggestion_box",
                     )
-                    # Only navigate when the user picks a real suggestion.
+                    # Navigate by index (not label→id dict) so duplicate titles stay correct.
                     if selected != "— Select a suggestion —":
-                        label_to_id = {s[0]: s[1] for s in suggestions}
-                        goto_details(label_to_id[selected])
+                        pick = labels.index(selected) - 1
+                        goto_details(suggestions[pick][1])
                 else:
                     st.info("No suggestions. Try another keyword.")
 
@@ -397,10 +416,13 @@ if st.session_state.view == "home":
             home_cards, err = api_get_json(
                 "/home", params={"category": home_category, "limit": 24}
             )
-        if err or not home_cards:
-            st.error(f"Home feed failed: {err or 'Unknown error'}")
+        if err:
+            st.error(f"Home feed failed: {err}")
             st.stop()
-        poster_grid(home_cards, cols=grid_cols, key_prefix="home_feed")
+        if not home_cards:
+            st.info("No movies in this feed right now.")
+        else:
+            poster_grid(home_cards, cols=grid_cols, key_prefix="home_feed")
 
 # ==========================================================
 # VIEW: DETAILS
@@ -440,9 +462,11 @@ elif st.session_state.view == "details":
 
     with right:
         st.markdown("<div class='details-panel'>", unsafe_allow_html=True)
-        st.markdown(f"## {data.get('title', '')}")
-        release = data.get("release_date") or "—"
-        genres = ", ".join([g["name"] for g in data.get("genres", [])]) or "—"
+        st.markdown(f"## {html.escape(str(data.get('title', '') or ''))}")
+        release = html.escape(str(data.get("release_date") or "—"))
+        genres = html.escape(
+            ", ".join([g["name"] for g in data.get("genres", [])]) or "—"
+        )
         st.markdown(
             f"<div class='cm-meta'>Release: {release} · Genres: {genres}</div>",
             unsafe_allow_html=True,
@@ -460,7 +484,8 @@ elif st.session_state.view == "details":
         '<div class="cm-section">Recommendations</div>', unsafe_allow_html=True
     )
 
-    # Prefer id-based bundle; fall back to title bundle / genre-only for older API deploys.
+    # Prefer id-based bundle. On older deploys, keep genre tied to this tmdb_id
+    # (do not rematch a different film via /movie/search for genre).
     with st.spinner("Finding similar movies…"):
         bundle, err2 = api_get_json(
             f"/movie/id/{tmdb_id}/recommendations",
@@ -468,8 +493,9 @@ elif st.session_state.view == "details":
         )
         if err2 or not bundle:
             title = (data.get("title") or "").strip()
+            title_bundle, err_title = (None, "no title")
             if title:
-                bundle, err2 = api_get_json(
+                title_bundle, err_title = api_get_json(
                     "/movie/search",
                     params={
                         "query": title,
@@ -477,6 +503,20 @@ elif st.session_state.view == "details":
                         "genre_limit": 12,
                     },
                 )
+            genre_only, err_genre = api_get_json(
+                "/recommend/genre", params={"tmdb_id": tmdb_id, "limit": 12}
+            )
+            if title_bundle or genre_only:
+                bundle = {
+                    "tfidf_recommendations": (title_bundle or {}).get(
+                        "tfidf_recommendations", []
+                    ),
+                    "genre_recommendations": genre_only
+                    or (title_bundle or {}).get("genre_recommendations", []),
+                }
+                err2 = None
+            else:
+                err2 = err_title or err_genre or err2
 
     if not err2 and bundle:
         st.markdown("##### Similar (TF-IDF)")
@@ -492,13 +532,6 @@ elif st.session_state.view == "details":
             key_prefix="details_genre",
         )
     else:
-        st.info("Showing genre recommendations (fallback).")
-        genre_only, err3 = api_get_json(
-            "/recommend/genre", params={"tmdb_id": tmdb_id, "limit": 18}
+        st.warning(
+            f"No recommendations available right now. ({err2 or 'unknown'})"
         )
-        if not err3 and genre_only:
-            poster_grid(genre_only, cols=grid_cols, key_prefix="details_genre_fallback")
-        else:
-            st.warning(
-                f"No recommendations available right now. ({err2 or err3 or 'unknown'})"
-            )
