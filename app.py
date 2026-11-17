@@ -114,10 +114,15 @@ hr { border-color: rgba(255,255,255,0.08) !important; }
 # =============================
 # STATE + ROUTING
 # =============================
+HOME_CATEGORIES = ["trending", "popular", "top_rated", "now_playing", "upcoming"]
+
 if "view" not in st.session_state:
     st.session_state.view = "home"  # home | details
 if "selected_tmdb_id" not in st.session_state:
     st.session_state.selected_tmdb_id = None
+# Keep feed category outside the selectbox widget so details → home does not reset it.
+if "home_category" not in st.session_state:
+    st.session_state.home_category = "trending"
 
 qp_view = st.query_params.get("view")
 qp_id = st.query_params.get("id")
@@ -309,15 +314,25 @@ with st.sidebar:
     st.markdown("---")
     if st.session_state.view == "home":
         st.markdown("### Home feed")
-        home_category = st.selectbox(
+        current = st.session_state.home_category
+        try:
+            cat_index = HOME_CATEGORIES.index(current)
+        except ValueError:
+            cat_index = 0
+        selected_category = st.selectbox(
             "Category",
-            ["trending", "popular", "top_rated", "now_playing", "upcoming"],
-            index=0,
+            HOME_CATEGORIES,
+            index=cat_index,
+            key="home_category_select",
         )
+        st.session_state.home_category = selected_category
     else:
-        home_category = "trending"
-        st.caption("Open Home to change the feed category.")
+        st.caption(
+            f"Feed category saved: `{st.session_state.home_category}` "
+            "(change it on Home)."
+        )
 
+    home_category = st.session_state.home_category
     grid_cols = st.slider("Grid columns", 4, 8, 6)
     st.markdown("---")
     st.caption(f"API: `{API_BASE}`")
