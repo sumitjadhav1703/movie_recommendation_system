@@ -42,20 +42,20 @@ st.markdown(
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Source+Sans+3:wght@400;600;700&display=swap');
 
-html, body, [class*="css"] {
+html, body, [class*="css"]  {
   font-family: "Source Sans 3", sans-serif;
 }
 
 .block-container {
-  padding-top: 1.25rem;
-  padding-bottom: 2.5rem;
+  padding-top: 1.1rem;
+  padding-bottom: 2rem;
   max-width: 1280px;
 }
 
 .cm-hero {
-  margin: 0 0 0.35rem 0;
+  margin: 0 0 0.25rem 0;
   font-family: "Bebas Neue", sans-serif;
-  font-size: clamp(2.6rem, 5vw, 3.6rem);
+  font-size: clamp(2.4rem, 4.5vw, 3.3rem);
   letter-spacing: 0.04em;
   line-height: 1;
   color: #F2F0EA;
@@ -64,52 +64,78 @@ html, body, [class*="css"] {
 
 .cm-tagline {
   color: #9AA3B2;
-  font-size: 1.02rem;
-  margin-bottom: 1rem;
+  font-size: 0.98rem;
+  margin-bottom: 0.65rem;
 }
 
 .cm-section {
   font-family: "Bebas Neue", sans-serif;
   letter-spacing: 0.06em;
-  font-size: 1.55rem;
+  font-size: 1.45rem;
   color: #F2F0EA;
-  margin: 0.4rem 0 0.75rem 0;
+  margin: 0.25rem 0 0.55rem 0;
 }
 
 .cm-meta {
   color: #9AA3B2;
   font-size: 0.95rem;
+  margin-bottom: 0.55rem;
 }
 
-.movie-title {
-  font-size: 0.88rem;
-  line-height: 1.2rem;
+/* Poster images: kill Streamlit's padded image card chrome */
+div[data-testid="stImage"] {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+div[data-testid="stImage"] > div,
+div[data-testid="stImage"] figure,
+div[data-testid="stImage"] img {
+  border-radius: 8px !important;
+}
+div[data-testid="stImage"] img {
+  border: none !important;
+  display: block;
+}
+
+/* Hide image fullscreen / toolbar affordances */
+button[title="View fullscreen"],
+[data-testid="StyledFullScreenButton"],
+div[data-testid="stToolbar"],
+.stDeployButton,
+button[kind="header"] {
+  display: none !important;
+}
+
+/* Tighter vertical rhythm inside poster columns */
+div[data-testid="column"] div[data-testid="stButton"] {
+  margin-top: 0.1rem;
+  margin-bottom: 0.05rem;
+}
+div[data-testid="column"] div[data-testid="stButton"] > button {
+  width: 100%;
+  padding-top: 0.22rem;
+  padding-bottom: 0.22rem;
+}
+div[data-testid="column"] [data-testid="stCaptionContainer"] {
+  margin-top: 0.1rem;
   min-height: 2.4rem;
-  overflow: hidden;
-  margin-top: 0.35rem;
-  color: #E8ECF2;
-}
-
-.poster-shell {
-  border-radius: 10px;
-  overflow: hidden;
-  background: linear-gradient(160deg, #1A1F29 0%, #12151C 100%);
-  border: 1px solid rgba(232, 184, 109, 0.12);
-  padding: 0.45rem;
-}
-
-.details-panel {
-  border-radius: 14px;
-  border: 1px solid rgba(232, 184, 109, 0.16);
-  background: linear-gradient(145deg, rgba(26,31,41,0.95), rgba(14,17,22,0.9));
-  padding: 1.1rem 1.25rem 1.25rem 1.25rem;
 }
 
 div[data-testid="stSidebar"] {
   background: #12151C;
 }
+div[data-testid="stSidebar"] code {
+  color: #9AA3B2 !important;
+  background: transparent !important;
+}
 
-/* Soften default Streamlit chrome a bit */
+/* Hide Streamlit chrome that makes a demo feel messy */
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
+header[data-testid="stHeader"] { background: transparent; }
+div[data-testid="stDecoration"] { display: none; }
+
 hr { border-color: rgba(255,255,255,0.08) !important; }
 </style>
 """,
@@ -214,19 +240,20 @@ def poster_grid(
             poster = m.get("poster_url")
 
             with colset[c]:
-                st.markdown("<div class='poster-shell'>", unsafe_allow_html=True)
+                # Image → button → caption only. No HTML shell wrappers (Streamlit
+                # cannot nest widgets inside markdown divs; empty frames appear).
                 if poster:
                     st.image(poster, use_column_width=True)
                 else:
                     st.caption("No poster")
-                if st.button("Open", key=f"{key_prefix}_{r}_{c}_{idx}_{tmdb_id}"):
+                if st.button(
+                    "Open",
+                    key=f"{key_prefix}_{r}_{c}_{idx}_{tmdb_id}",
+                    use_container_width=True,
+                ):
                     if tmdb_id:
                         goto_details(int(tmdb_id))
-                st.markdown(
-                    f"<div class='movie-title'>{html.escape(str(title))}</div>",
-                    unsafe_allow_html=True,
-                )
-                st.markdown("</div>", unsafe_allow_html=True)
+                st.caption(title)
 
 
 def to_cards_from_tfidf_items(tfidf_items: Optional[List[dict]]) -> List[dict]:
@@ -347,14 +374,16 @@ with st.sidebar:
         st.session_state.home_category = selected_category
     else:
         st.caption(
-            f"Feed category saved: `{st.session_state.home_category}` "
+            f"Feed category saved: {st.session_state.home_category} "
             "(change it on Home)."
         )
 
     home_category = st.session_state.home_category
+    # Grid density only matters when showing poster grids (home + details recs).
     grid_cols = st.slider("Grid columns", 4, 8, 6)
     st.markdown("---")
-    st.caption(f"API: `{API_BASE}`")
+    # Plain caption (no backticks) avoids Streamlit's loud green code chip.
+    st.caption(f"API · {API_BASE.replace('https://', '')}")
 
 # =============================
 # HEADER
@@ -453,15 +482,12 @@ elif st.session_state.view == "details":
     left, right = st.columns([1, 2.2], gap="large")
 
     with left:
-        st.markdown("<div class='poster-shell'>", unsafe_allow_html=True)
         if data.get("poster_url"):
             st.image(data["poster_url"], use_column_width=True)
         else:
             st.caption("No poster")
-        st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
-        st.markdown("<div class='details-panel'>", unsafe_allow_html=True)
         st.markdown(f"## {html.escape(str(data.get('title', '') or ''))}")
         release = html.escape(str(data.get("release_date") or "—"))
         genres = html.escape(
@@ -473,7 +499,6 @@ elif st.session_state.view == "details":
         )
         st.markdown("#### Overview")
         st.write(data.get("overview") or "No overview available.")
-        st.markdown("</div>", unsafe_allow_html=True)
 
     if data.get("backdrop_url"):
         st.markdown('<div class="cm-section">Backdrop</div>', unsafe_allow_html=True)
