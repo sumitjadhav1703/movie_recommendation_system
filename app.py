@@ -42,30 +42,41 @@ st.markdown(
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Source+Sans+3:wght@400;600;700&display=swap');
 
-html, body, [class*="css"]  {
+html, body, [class*="css"] {
   font-family: "Source Sans 3", sans-serif;
 }
 
+/* Kill Streamlit top header so it cannot clip/overlap the CINEMATCH brand */
+header[data-testid="stHeader"],
+div[data-testid="stToolbar"],
+.stDeployButton,
+div[data-testid="stDecoration"],
+#MainMenu, footer {
+  display: none !important;
+}
+
 .block-container {
-  padding-top: 1.1rem;
+  padding-top: 1.75rem !important;
   padding-bottom: 2rem;
   max-width: 1280px;
 }
 
 .cm-hero {
-  margin: 0 0 0.25rem 0;
+  margin: 0.15rem 0 0.35rem 0;
   font-family: "Bebas Neue", sans-serif;
-  font-size: clamp(2.4rem, 4.5vw, 3.3rem);
-  letter-spacing: 0.04em;
-  line-height: 1;
+  font-size: clamp(2.8rem, 5vw, 3.8rem);
+  letter-spacing: 0.05em;
+  line-height: 0.95;
   color: #F2F0EA;
+  position: relative;
+  z-index: 2;
 }
 .cm-hero span { color: #E8B86D; }
 
 .cm-tagline {
   color: #9AA3B2;
   font-size: 0.98rem;
-  margin-bottom: 0.65rem;
+  margin-bottom: 0.85rem;
 }
 
 .cm-section {
@@ -73,7 +84,7 @@ html, body, [class*="css"]  {
   letter-spacing: 0.06em;
   font-size: 1.45rem;
   color: #F2F0EA;
-  margin: 0.25rem 0 0.55rem 0;
+  margin: 0.35rem 0 0.65rem 0;
 }
 
 .cm-meta {
@@ -82,44 +93,55 @@ html, body, [class*="css"]  {
   margin-bottom: 0.55rem;
 }
 
-/* Poster images: kill Streamlit's padded image card chrome */
-div[data-testid="stImage"] {
+/* Poster stack: no dark secondary "card" behind image/button */
+div[data-testid="column"] [data-testid="stVerticalBlock"],
+div[data-testid="column"] [data-testid="element-container"],
+div[data-testid="column"] [data-testid="stFullScreenFrame"],
+div[data-testid="column"] [data-testid="stImage"],
+div[data-testid="stImage"] > div,
+div[data-testid="stImage"] figure {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
-}
-div[data-testid="stImage"] > div,
-div[data-testid="stImage"] figure,
-div[data-testid="stImage"] img {
-  border-radius: 8px !important;
-}
-div[data-testid="stImage"] img {
-  border: none !important;
-  display: block;
+  padding: 0 !important;
 }
 
-/* Hide image fullscreen / toolbar affordances */
+div[data-testid="stImage"] img {
+  border: none !important;
+  border-radius: 6px !important;
+  display: block;
+  width: 100%;
+}
+
 button[title="View fullscreen"],
-[data-testid="StyledFullScreenButton"],
-div[data-testid="stToolbar"],
-.stDeployButton,
-button[kind="header"] {
+[data-testid="StyledFullScreenButton"] {
   display: none !important;
 }
 
-/* Tighter vertical rhythm inside poster columns */
+/* Compact Open buttons + clamped titles for even rows */
 div[data-testid="column"] div[data-testid="stButton"] {
-  margin-top: 0.1rem;
-  margin-bottom: 0.05rem;
+  margin: 0.25rem 0 0.1rem 0 !important;
 }
 div[data-testid="column"] div[data-testid="stButton"] > button {
   width: 100%;
-  padding-top: 0.22rem;
-  padding-bottom: 0.22rem;
+  padding-top: 0.2rem;
+  padding-bottom: 0.2rem;
+  background: transparent !important;
+  border: 1px solid rgba(242, 240, 234, 0.28) !important;
 }
 div[data-testid="column"] [data-testid="stCaptionContainer"] {
-  margin-top: 0.1rem;
-  min-height: 2.4rem;
+  margin-top: 0 !important;
+  margin-bottom: 0.55rem !important;
+  min-height: 2.6rem;
+}
+div[data-testid="column"] [data-testid="stCaptionContainer"] p {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.25rem;
+  font-size: 0.86rem;
+  color: #D5DAE3 !important;
 }
 
 div[data-testid="stSidebar"] {
@@ -129,12 +151,6 @@ div[data-testid="stSidebar"] code {
   color: #9AA3B2 !important;
   background: transparent !important;
 }
-
-/* Hide Streamlit chrome that makes a demo feel messy */
-#MainMenu { visibility: hidden; }
-footer { visibility: hidden; }
-header[data-testid="stHeader"] { background: transparent; }
-div[data-testid="stDecoration"] { display: none; }
 
 hr { border-color: rgba(255,255,255,0.08) !important; }
 </style>
@@ -228,7 +244,8 @@ def poster_grid(
     rows = (len(cards) + cols - 1) // cols
     idx = 0
     for r in range(rows):
-        colset = st.columns(cols)
+        # Small gap keeps posters aligned without looking like overlapping cards.
+        colset = st.columns(cols, gap="small")
         for c in range(cols):
             if idx >= len(cards):
                 break
@@ -253,7 +270,9 @@ def poster_grid(
                 ):
                     if tmdb_id:
                         goto_details(int(tmdb_id))
-                st.caption(title)
+                # Keep title short so rows stay aligned.
+                label = title if len(title) <= 42 else title[:39].rstrip() + "…"
+                st.caption(label)
 
 
 def to_cards_from_tfidf_items(tfidf_items: Optional[List[dict]]) -> List[dict]:
@@ -379,10 +398,10 @@ with st.sidebar:
         )
 
     home_category = st.session_state.home_category
-    # Grid density only matters when showing poster grids (home + details recs).
+    # Keep grid control available on both views (home feed + details recommendations).
     grid_cols = st.slider("Grid columns", 4, 8, 6)
     st.markdown("---")
-    # Plain caption (no backticks) avoids Streamlit's loud green code chip.
+    # Quiet caption — no backticks (Streamlit renders those as loud green chips).
     st.caption(f"API · {API_BASE.replace('https://', '')}")
 
 # =============================

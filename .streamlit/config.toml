@@ -2,7 +2,8 @@
 base = "dark"
 primaryColor = "#E8B86D"
 backgroundColor = "#0E1116"
-secondaryBackgroundColor = "#1A1F29"
+# Keep secondary close to page bg so Streamlit widgets do not look like dark cards.
+secondaryBackgroundColor = "#12151C"
 textColor = "#F2F0EA"
 font = "sans serif"
 
@@ -11,3 +12,6 @@ headless = true
 
 [browser]
 gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
